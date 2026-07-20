@@ -2,6 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background: #F6EFE1; }
+html {
+  scroll-behavior: smooth;
+}
+
+html, body { 
+  background: #F6EFE1; 
+  color: #3B2A1E;
+  font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --sand: #F6EFE1;
+  --sand-deep: #EDE0C8;
+  --card: #FBF6EC;
+  --coffee: #3B2A1E;
+  --coffee-soft: #6B5642;
+  --moss: #5C7A52;
+  --rust: #A6572E;
+  --lavender-bg: #D9D2E9;
+  --lavender-text: #6C5B7B;
+  --hairline: #D9C7A9;
+}
 
 @keyframes sq-blink { 50% { opacity: 0; } }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sand);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sand-deep);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hairline);
+}
+
+@layer utilities {
+  .section-spacing {
+    @apply py-16 md:py-24;
+  }
+  .card-padding {
+    @apply p-5 md:p-6;
+  }
+  .heading-display {
+    @apply text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-coffee leading-[1.15];
+  }
+  .heading-section {
+    @apply text-2xl md:text-3xl font-bold tracking-tight text-coffee;
+  }
+  .title-card {
+    @apply text-base md:text-lg font-bold text-coffee;
+  }
+  .text-body {
+    @apply text-sm md:text-base text-coffee-soft leading-relaxed;
+  }
+  .text-meta {
+    @apply text-xs font-mono uppercase tracking-wider text-rust-dark font-bold;
+  }
+  .focus-ring {
+    @apply focus:ring-2 focus:ring-coffee/10 focus:border-coffee outline-none transition-all;
+  }
+  
+  .card-base {
+    @apply bg-card border border-hairline/60 rounded-2xl shadow-sm transition-all duration-300;
+  }
+  
+  .btn-primary {
+    @apply bg-coffee text-sand font-semibold px-5 py-2.5 rounded-xl hover:bg-coffee-soft active:scale-[0.98] transition-all shadow-sm duration-300;
+  }
+  
+  .btn-secondary {
+    @apply bg-sand-deep/40 text-coffee font-semibold px-5 py-2.5 rounded-xl hover:bg-sand-deep/70 active:scale-[0.98] transition-all border border-hairline/40 duration-300;
+  }
+  
+  .btn-accent {
+    @apply bg-rust text-sand font-semibold px-5 py-2.5 rounded-xl hover:bg-rust-dark active:scale-[0.98] transition-all shadow-sm duration-300;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border border-hairline bg-card px-4 py-3 text-sm text-coffee outline-none focus:border-coffee transition-colors shadow-sm focus-ring;
+  }
+
+  .bg-lavender-light {
+    background-color: var(--lavender-bg);
+  }
+  
+  .text-lavender-dark {
+    color: var(--lavender-text);
+  }
+  
+  .border-lavender-soft {
+    border-color: var(--lavender-bg);
+  }
+}

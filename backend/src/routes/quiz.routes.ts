@@ -22,9 +22,8 @@ router.post("/generate", verifyClerkAuth, async (req, res) => {
   const questions = await generateQuiz(topic);
   activeQuizzes.set(cacheKey(req.userId!, topic), questions);
 
-  // Hide correct answers from the client
-  const safeQuestions = questions.map(({ question, options }) => ({ question, options }));
-  res.json({ questions: safeQuestions });
+  // Return full questions array including correct answers and explanations
+  res.json({ questions });
 });
 
 // POST /api/quiz/submit  { topic, answers: { [index]: chosenOption } }
@@ -36,8 +35,19 @@ router.post("/submit", verifyClerkAuth, async (req, res) => {
   if (!questions) return res.status(400).json({ error: "No active quiz for this topic. Generate one first." });
 
   let score = 0;
-  questions.forEach((q, i) => {
-    if (answers[String(i)] === q.correctAnswer) score += 1;
+  const detailedResults = questions.map((q, i) => {
+    const userAnswer = answers[String(i)] || null;
+    const isCorrect = userAnswer === q.correctAnswer;
+    if (isCorrect) score += 1;
+    return {
+      question: q.question,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      userAnswer,
+      isCorrect,
+      explanation: q.explanation || `The correct answer is "${q.correctAnswer}".`,
+      command: q.command || null
+    };
   });
 
   await saveQuizResult(req.userId!, topic, score, questions.length);
@@ -46,7 +56,7 @@ router.post("/submit", verifyClerkAuth, async (req, res) => {
   }
 
   activeQuizzes.delete(cacheKey(req.userId!, topic));
-  res.json({ score, total: questions.length });
+  res.json({ score, total: questions.length, detailedResults });
 });
 
 export default router;
