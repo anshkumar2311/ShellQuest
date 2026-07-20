@@ -27,6 +27,14 @@ export default function App() {
           </RequireAuth>
         }
       />
+      <Route
+        path="/progress"
+        element={
+          <RequireAuth>
+            <DashboardPage initialTab="progress" />
+          </RequireAuth>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -13,7 +13,20 @@ if (!PUBLISHABLE_KEY) {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+    <ClerkProvider 
+      publishableKey={PUBLISHABLE_KEY}
+      appearance={{
+        variables: {
+          colorPrimary: "#3B2A1E",
+          colorText: "#3B2A1E",
+          colorBackground: "#FBF6EC",
+          colorInputBackground: "#FBF6EC",
+          colorInputText: "#3B2A1E",
+          borderRadius: "0.75rem",
+          colorBorder: "#D9C7A9",
+        }
+      }}
+    >
       <BrowserRouter>
         <App />
       </BrowserRouter>

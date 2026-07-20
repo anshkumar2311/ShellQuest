@@ -61,15 +61,17 @@ export default function TerminalComponent({ onTaskComplete }) {
   }, [getToken, onTaskComplete]);
 
   return (
-    <div className="rounded-lg overflow-hidden border border-hairline" style={{ background: "#2A2018" }}>
-      <div className="flex items-center gap-1.5 px-4 py-2.5" style={{ background: "#352719" }}>
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#C9694A" }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#D9B15E" }} />
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#7C9A6E" }} />
-        <span className="ml-3 font-mono text-[11px]" style={{ color: "#B8A791" }}>terminal</span>
-        <span ref={errorRef} className="ml-auto font-mono text-[11px]" style={{ color: "#C9694A" }} />
+    <div className="card-base overflow-hidden bg-[#2A2018] border-hairline/60">
+      <div className="flex items-center gap-1.5 px-4 py-2 bg-[#352719] border-b border-hairline/10">
+        <span className="h-2.5 w-2.5 rounded-full bg-rust" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[#D9B15E]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-moss" />
+        <span className="ml-3 font-mono text-[11px] text-[#B8A791] font-semibold">terminal</span>
+        <span ref={errorRef} className="ml-auto font-mono text-[11px] text-rust" />
       </div>
-      <div ref={containerRef} className="p-2 h-[320px]" />
+      <div className="p-3 bg-[#2A2018]">
+        <div ref={containerRef} className="h-[280px]" />
+      </div>
     </div>
   );
 }
