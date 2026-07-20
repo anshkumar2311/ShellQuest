@@ -5,7 +5,7 @@ export interface AuthedUser {
 export interface QuizQuestion {
   question: string;
   options: string[];
-  correctAnswer: string;
+  correctAnswers: string[];
 }
 
 export interface DailyTask {
