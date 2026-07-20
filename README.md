@@ -101,4 +101,4 @@ Left as a hook to extend (called out in code comments):
 1. **Day 1** — Clerk login, Home Page, Dashboard shell (tabs, no data yet)
 2. **Day 2** — Terminal (node-pty + xterm.js) + Daily Task tab
 3. **Day 3** — AI Chat + Quiz (AI generate) + DB save/fetch
-4. **Day 4** — Badges tab + deploy to AWS EC2 + testing .
+4. **Day 4** — Badges tab + deploy to AWS EC2 + testing
