@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BadgeType {
+  SKILL
+  STREAK
+  COLLECTION
+  GAMEPLAY
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  description String
+  tasks       Task[]
+  target      Int         @default(1)
+  type        BadgeType
+  userBadges  UserBadge[]
+}
+
+model User {
+  id           String        @id // clerkId
+  name         String
+  email        String?
+  createdAt    DateTime      @default(now())
+  attempts     Attempt[]
+  userBadges   UserBadge[]
+  quizAttempts QuizAttempt[]
+}
+
+model UserBadge {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  badgeId    String
+  badge      Badge    @relation(fields: [badgeId], references: [id])
+  progress   Int      @default(1)
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String     @default("")
+  difficulty  Difficulty @default(BEGINNER)
+  badgeId     String[]
+  badge       Badge[]
+  attempts    Attempt[]
+  isDailyTask Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+}
+
+model Attempt {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  timeTaken  Float
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id])
+  wasSuccess Boolean
+  createdAt  DateTime @default(now())
+}
+
+model Quiz {
+  id        String        @id @default(cuid())
+  questions Question[]
+  attempts  QuizAttempt[]
+}
+
+model Question {
+  id        String            @id @default(cuid())
+  statement String            @unique
+  options   Option[]
+  quizId    String
+  quiz      Quiz              @relation(fields: [quizId], references: [id])
+  attempts  QuestionAttempt[]
+}
+
+model Option {
+  id         String            @id @default(cuid())
+  text       String
+  isCorrect  Boolean
+  questionId String
+  question   Question          @relation(fields: [questionId], references: [id])
+  selectedId QuestionAttempt[]
+}
+
+model QuizAttempt {
+  id      String            @id @default(cuid())
+  userId  String
+  quizId  String
+  user    User              @relation(fields: [userId], references: [id])
+  quiz    Quiz              @relation(fields: [quizId], references: [id])
+  answers QuestionAttempt[]
+}
+
+model QuestionAttempt {
+  id            String      @id @default(cuid())
+  questionId    String
+  question      Question    @relation(fields: [questionId], references: [id])
+  quizAttemptId String
+  quizAttempt   QuizAttempt @relation(fields: [quizAttemptId], references: [id])
+  selected      Option[]
+}

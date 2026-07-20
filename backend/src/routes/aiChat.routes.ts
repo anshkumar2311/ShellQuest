@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
-import { askAi } from "../services/aiService";
+import { getLLMConnector } from "../lib/llm-connector";
 
 const router = Router();
 
@@ -10,7 +10,11 @@ router.post("/", verifyClerkAuth, async (req, res) => {
   if (!message) return res.status(400).json({ error: "message is required" });
 
   try {
-    const reply = await askAi(message);
+    const systemPrompt =
+      "You are a friendly Linux teaching assistant inside a learning app called ShellQuest. " +
+      "Explain commands simply, with a short example. Keep answers under 120 words and strictly avoid any markdown notations.";
+
+    const reply = await getLLMConnector().completion(systemPrompt, [message]);
     res.json({ reply });
   } catch (err) {
     res.status(500).json({ error: "AI chat failed" });

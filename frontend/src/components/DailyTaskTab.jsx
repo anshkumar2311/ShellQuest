@@ -34,8 +34,9 @@ export default function DailyTaskTab() {
     try {
       await api.post("/api/daily-task/complete", { taskId: task?.id });
       setCompleted(true);
-    } catch {
-      setError("Could not mark the task complete. Try again.");
+    } catch (err) {
+      const serverError = err?.response?.data?.error;
+      setError(serverError || "Could not mark the task complete. Try again.");
     } finally {
       setMarkingDone(false);
     }
@@ -62,7 +63,7 @@ export default function DailyTaskTab() {
         <p className="text-sm text-coffee-soft mt-1.5 leading-relaxed">{task?.description}</p>
 
         {error ? (
-          <p className="mt-3 text-sm text-rust-dark">{error}</p>
+          <p className="mt-3 text-sm text-rust-dark whitespace-pre-wrap font-mono bg-rust/10 p-2 rounded">{error}</p>
         ) : null}
 
         {!completed ? (

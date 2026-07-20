@@ -1,0 +1,27 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    coreutils \
+    findutils \
+    grep \
+    sed \
+    gawk \
+    procps \
+    util-linux \
+    file \
+    nano \
+    vim-tiny \
+    less \
+    tree \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash player \
+    && echo "player ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/player \
+    && chmod 0440 /etc/sudoers.d/player
+
+USER player
+WORKDIR /home/player
+
+CMD ["/bin/bash"]

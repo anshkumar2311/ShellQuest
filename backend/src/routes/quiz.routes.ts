@@ -1,52 +1,113 @@
 import { Router } from "express";
 import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
 import { generateQuiz } from "../services/aiService";
-import { saveQuizResult, unlockBadge } from "../services/dbService";
+import { prisma } from "../db/prisma";
 import { QuizQuestion } from "../types";
 
 const router = Router();
-
-// In-memory cache of the last generated quiz per user+topic so /submit can
-// grade without trusting the client for correct answers.
-const activeQuizzes = new Map<string, QuizQuestion[]>();
-
-function cacheKey(userId: string, topic: string) {
-  return `${userId}::${topic}`;
-}
 
 // POST /api/quiz/generate  { topic }
 router.post("/generate", verifyClerkAuth, async (req, res) => {
   const { topic } = req.body as { topic?: string };
   if (!topic) return res.status(400).json({ error: "topic is required" });
 
-  const questions = await generateQuiz(topic);
-  activeQuizzes.set(cacheKey(req.userId!, topic), questions);
+  const aiQuestions = await generateQuiz(topic);
 
-  // Hide correct answers from the client
-  const safeQuestions = questions.map(({ question, options }) => ({ question, options }));
-  res.json({ questions: safeQuestions });
-});
-
-// POST /api/quiz/submit  { topic, answers: { [index]: chosenOption } }
-router.post("/submit", verifyClerkAuth, async (req, res) => {
-  const { topic, answers } = req.body as { topic?: string; answers?: Record<string, string> };
-  if (!topic || !answers) return res.status(400).json({ error: "topic and answers are required" });
-
-  const questions = activeQuizzes.get(cacheKey(req.userId!, topic));
-  if (!questions) return res.status(400).json({ error: "No active quiz for this topic. Generate one first." });
-
-  let score = 0;
-  questions.forEach((q, i) => {
-    if (answers[String(i)] === q.correctAnswer) score += 1;
+  // Save the quiz to the database
+  const quiz = await prisma.quiz.create({
+    data: {
+      questions: {
+        create: aiQuestions.map((q) => {
+          const qCorrectList = Array.isArray(q.correctAnswers) ? q.correctAnswers : ((q as any).correctAnswer ? [(q as any).correctAnswer] : []);
+          // Append zero-width space + random to avoid statement unique constraint violations
+          const uniqueSuffix = ` \u200B${Math.random().toString(36).substring(7)}`;
+          return {
+            statement: q.question + uniqueSuffix,
+            options: {
+              create: q.options.map((opt) => ({
+                text: opt,
+                isCorrect: qCorrectList.includes(opt)
+              }))
+            }
+          };
+        })
+      }
+    },
+    include: { questions: { include: { options: true } } }
   });
 
-  await saveQuizResult(req.userId!, topic, score, questions.length);
-  if (score === questions.length) {
-    await unlockBadge(req.userId!, "Perfect Quiz");
+  // Hide correct answers from the client and guarantee order
+  const safeQuestions = [...quiz.questions]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(q => ({
+      id: q.id,
+      question: q.statement.replace(/ \u200B.*/, ''), // remove our uniqueness hack for display
+      options: [...q.options].sort((a, b) => a.id.localeCompare(b.id)).map(o => o.text)
+    }));
+  
+  res.json({ quizId: quiz.id, questions: safeQuestions });
+});
+
+// POST /api/quiz/submit  { quizId, answers: { [index]: chosenOption } }
+router.post("/submit", verifyClerkAuth, async (req, res) => {
+  const { quizId, answers } = req.body as { quizId?: string; answers?: Record<string, string | string[]> };
+  
+  if (!quizId || !answers) return res.status(400).json({ error: "quizId and answers are required" });
+
+  const quiz = await prisma.quiz.findUnique({
+    where: { id: quizId },
+    include: { questions: { orderBy: { id: 'asc' }, include: { options: { orderBy: { id: 'asc' } } } } }
+  });
+
+  if (!quiz) return res.status(404).json({ error: "Quiz not found." });
+
+  let score = 0;
+  
+  const questionAttempts = quiz.questions.map((q, i) => {
+    // The frontend sends answers keyed by index 0,1,2, etc.
+    const selectedOptionsList = Array.isArray(answers[String(i)]) 
+      ? (answers[String(i)] as string[])
+      : [answers[String(i)] as string].filter(Boolean);
+      
+    const correctOptions = q.options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length > 0) {
+      const correctSelections = selectedOptionsList.filter(optText => correctOptions.some(co => co.text === optText)).length;
+      score += (correctSelections / correctOptions.length);
+    }
+    
+    const selectedOptionIds = q.options
+      .filter(opt => selectedOptionsList.includes(opt.text))
+      .map(opt => ({ id: opt.id }));
+
+    return {
+      questionId: q.id,
+      selected: { connect: selectedOptionIds }
+    };
+  });
+
+  await prisma.quizAttempt.create({
+    data: {
+      userId: req.userId!,
+      quizId: quiz.id,
+      answers: {
+        create: questionAttempts
+      }
+    }
+  });
+
+  if (Math.abs(score - quiz.questions.length) < 0.01) {
+    const badge = await prisma.badge.findUnique({ where: { name: "Perfect Quiz" } });
+    if (badge) {
+      await prisma.userBadge.upsert({
+        where: { userId_badgeId: { userId: req.userId!, badgeId: badge.id } },
+        create: { userId: req.userId!, badgeId: badge.id },
+        update: {}
+      });
+    }
   }
 
-  activeQuizzes.delete(cacheKey(req.userId!, topic));
-  res.json({ score, total: questions.length });
+  res.json({ score, total: quiz.questions.length });
 });
 
 export default router;

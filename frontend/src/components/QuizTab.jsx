@@ -9,6 +9,7 @@ export default function QuizTab() {
   const { getToken } = useAuth();
   const [topic, setTopic] = useState(null);
   const [questions, setQuestions] = useState(null);
+  const [quizId, setQuizId] = useState(null);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -18,10 +19,12 @@ export default function QuizTab() {
     setLoading(true);
     setResult(null);
     setAnswers({});
+    setQuizId(null);
     try {
       const api = createApiClient(getToken);
       const { data } = await api.post("/api/quiz/generate", { topic: t });
       setQuestions(data.questions);
+      setQuizId(data.quizId);
     } finally {
       setLoading(false);
     }
@@ -31,7 +34,7 @@ export default function QuizTab() {
     setLoading(true);
     try {
       const api = createApiClient(getToken);
-      const { data } = await api.post("/api/quiz/submit", { topic, answers });
+      const { data } = await api.post("/api/quiz/submit", { quizId, answers });
       setResult(data);
     } finally {
       setLoading(false);
