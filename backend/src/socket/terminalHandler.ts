@@ -1,14 +1,15 @@
+import { exec } from "child_process";
 import * as pty from "node-pty";
 import { Server, Socket } from "socket.io";
-import { verifyClerkSocketToken } from "../middleware/verifyClerkAuth";
-import { exec } from "child_process";
 import { promisify } from "util";
 import { logger } from "../lib/logger";
+import { verifyClerkSocketToken } from "../middleware/verifyClerkAuth";
 
 const execAsync = promisify(exec);
 
 const TERMINAL_SUPPORTED = process.platform !== "win32";
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const PLAYER_IMAGE = "shellquest-player";
 
 interface UserContainerState {
   containerName: string;
@@ -21,26 +22,34 @@ async function ensureContainerRunning(userId: string): Promise<string> {
   const containerName = `sq-${userId}`;
 
   try {
-    const { stdout } = await execAsync(`podman inspect -f '{{.State.Running}}' ${containerName}`);
+    const { stdout } = await execAsync(`docker inspect -f '{{.State.Running}}' ${containerName}`);
     if (stdout.trim() === "true") {
       return containerName; // Already running
     } else {
-      await execAsync(`podman start ${containerName}`);
+      await execAsync(`docker start ${containerName}`);
       return containerName;
     }
   } catch (error) {
     try {
-      await execAsync(`podman rm -f ${containerName}`);
+      await execAsync(`docker rm -f ${containerName}`);
     } catch { }
-    await execAsync(`podman run -d --name ${containerName} --hostname shellquest shellquest-player sleep infinity`);
+    await execAsync(`docker run -d --name ${containerName} --hostname shellquest ${PLAYER_IMAGE} sleep infinity`);
     return containerName;
+  }
+}
+
+async function ensurePlayerImageExists() {
+  try {
+    await execAsync(`docker image inspect ${PLAYER_IMAGE}`);
+  } catch {
+    await execAsync(`docker build -t ${PLAYER_IMAGE} -f Dockerfile.player .`);
   }
 }
 
 async function removeContainer(userId: string) {
   const containerName = `sq-${userId}`;
   try {
-    await execAsync(`podman rm -f ${containerName}`);
+    await execAsync(`docker rm -f ${containerName}`);
     logger.info(`Removed container ${containerName}`);
   } catch (err) {
     logger.error(`Error removing container ${containerName}: ${err}`);
@@ -82,6 +91,7 @@ export function registerTerminalHandler(io: Server) {
     }
 
     try {
+      await ensurePlayerImageExists();
       await ensureContainerRunning(userId);
     } catch (err: any) {
       logger.error(`Failed to start container for ${userId}: ${err.message}`);
@@ -91,7 +101,7 @@ export function registerTerminalHandler(io: Server) {
 
     let shell: pty.IPty | null = null;
     try {
-      shell = pty.spawn("podman", ["exec", "-it", containerName, "/bin/bash"], {
+      shell = pty.spawn("docker", ["exec", "-it", containerName, "/bin/bash"], {
         name: "xterm-256color",
         cols: 80,
         rows: 30,
@@ -123,8 +133,9 @@ export function registerTerminalHandler(io: Server) {
       await removeContainer(userId);
       // Wait for it to be removed, then emit event
       socket.emit("terminal-restarted");
-      
+
       try {
+        await ensurePlayerImageExists();
         await ensureContainerRunning(userId);
       } catch (err: any) {
         logger.error(`Failed to start container for ${userId}: ${err.message}`);
@@ -133,7 +144,7 @@ export function registerTerminalHandler(io: Server) {
       }
 
       try {
-        shell = pty.spawn("podman", ["exec", "-it", containerName, "/bin/bash"], {
+        shell = pty.spawn("docker", ["exec", "-it", containerName, "/bin/bash"], {
           name: "xterm-256color",
           cols: 80,
           rows: 30,

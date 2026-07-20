@@ -1,12 +1,12 @@
-import { Router } from "express";
-import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
-import { prisma } from "../db/prisma";
-import { generateDailyTask } from "../services/tasks";
-import path from "path";
 import { exec } from "child_process";
-import { promisify } from "util";
+import { Router } from "express";
 import fs from "fs/promises";
+import path from "path";
+import { promisify } from "util";
+import { prisma } from "../db/prisma";
 import { logger } from "../lib/logger";
+import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
+import { generateDailyTask } from "../services/tasks";
 
 const execAsync = promisify(exec);
 
@@ -73,7 +73,7 @@ router.post("/complete", verifyClerkAuth, async (req, res) => {
 
     // Check if container is running first
     try {
-      const { stdout: inspectOut } = await execAsync(`podman inspect -f '{{.State.Running}}' ${containerName}`);
+      const { stdout: inspectOut } = await execAsync(`docker inspect -f '{{.State.Running}}' ${containerName}`);
       if (inspectOut.trim() !== "true") {
         logger.error(`Container ${containerName} is not running.`);
         return res.status(400).json({ error: "Terminal environment is not running. Connect to the terminal first." });
@@ -87,7 +87,7 @@ router.post("/complete", verifyClerkAuth, async (req, res) => {
     // Execute the validation script inside the container
     try {
       logger.info(`Executing script inside container ${containerName}`);
-      const { stdout, stderr } = await execAsync(`podman exec -i ${containerName} bash < ${validatorPath}`);
+      const { stdout, stderr } = await execAsync(`docker exec -i ${containerName} bash < ${validatorPath}`);
       logger.info(`Script execution succeeded. stdout: ${stdout}, stderr: ${stderr}`);
     } catch (err: any) {
       logger.error(`Script execution failed! Exit code: ${err.code}, stdout: ${err.stdout}, stderr: ${err.stderr}, message: ${err.message}`);
