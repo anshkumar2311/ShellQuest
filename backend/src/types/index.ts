@@ -15,6 +15,9 @@ export interface DailyTask {
   title: string;
   description: string;
   verifyCommand?: string;
+  solutionCommand?: string;
+  solutionExplanation?: string;
+  solutionExample?: string;
 }
 
 export interface Badge {

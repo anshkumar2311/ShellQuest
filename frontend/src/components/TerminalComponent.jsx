@@ -6,7 +6,7 @@ import { FitAddon } from "xterm-addon-fit";
 import "xterm/css/xterm.css";
 import { API_URL } from "../lib/api.js";
 
-export default function TerminalComponent({ onTaskComplete }) {
+export default function TerminalComponent({ onTaskComplete, containerHeightClass = "h-[320px] sm:h-[360px] lg:h-[calc(100vh-360px)]" }) {
   const containerRef = useRef(null);
   const { getToken } = useAuth();
   const errorRef = useRef(null);
@@ -61,16 +61,16 @@ export default function TerminalComponent({ onTaskComplete }) {
   }, [getToken, onTaskComplete]);
 
   return (
-    <div className="card-base overflow-hidden bg-[#2A2018] border-hairline/60">
-      <div className="flex items-center gap-1.5 px-4 py-2 bg-[#352719] border-b border-hairline/10">
+    <div className="card-base overflow-hidden bg-[#2A2018] border-hairline/60 flex flex-col flex-1 h-full min-h-[360px]">
+      <div className="flex items-center gap-1.5 px-4 py-2 bg-[#352719] border-b border-hairline/10 flex-shrink-0">
         <span className="h-2.5 w-2.5 rounded-full bg-rust" />
         <span className="h-2.5 w-2.5 rounded-full bg-[#D9B15E]" />
         <span className="h-2.5 w-2.5 rounded-full bg-moss" />
-        <span className="ml-3 font-mono text-[11px] text-[#B8A791] font-semibold">terminal</span>
+        <span className="ml-3 font-mono text-[11px] text-[#B8A791] font-semibold">terminal workspace</span>
         <span ref={errorRef} className="ml-auto font-mono text-[11px] text-rust" />
       </div>
-      <div className="p-3 bg-[#2A2018]">
-        <div ref={containerRef} className="h-[280px]" />
+      <div className="p-3 bg-[#2A2018] flex-1 flex flex-col overflow-hidden">
+        <div ref={containerRef} className={`w-full flex-1 ${containerHeightClass}`} />
       </div>
     </div>
   );
