@@ -1,19 +1,59 @@
+import { exec } from "child_process";
 import * as pty from "node-pty";
 import { Server, Socket } from "socket.io";
+import { promisify } from "util";
+import { logger } from "../lib/logger";
 import { verifyClerkSocketToken } from "../middleware/verifyClerkAuth";
 
-const SHELL = process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : "bash";
-const TERMINAL_SUPPORTED = process.platform !== "win32";
+const execAsync = promisify(exec);
 
-/**
- * Very small heuristic verifier: after each command, check whether the
- * output looks like today's task got done. In a real project you'd run a
- * proper verify command (see dailyTask.routes.ts TASK_LIST) and diff output.
- */
-function looksLikeTaskDone(taskId: string, recentOutput: string): boolean {
-  // Placeholder heuristic — replace with real checks (e.g. run `ls`, `find`,
-  // parse output) matching each task's verifyCommand.
-  return false;
+const TERMINAL_SUPPORTED = process.platform !== "win32";
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const PLAYER_IMAGE = "shellquest-player";
+
+interface UserContainerState {
+  containerName: string;
+  activeSockets: Set<string>; // socket IDs
+  inactivityTimer: NodeJS.Timeout | null;
+}
+const userContainers = new Map<string, UserContainerState>();
+
+async function ensureContainerRunning(userId: string): Promise<string> {
+  const containerName = `sq-${userId}`;
+
+  try {
+    const { stdout } = await execAsync(`docker inspect -f '{{.State.Running}}' ${containerName}`);
+    if (stdout.trim() === "true") {
+      return containerName; // Already running
+    } else {
+      await execAsync(`docker start ${containerName}`);
+      return containerName;
+    }
+  } catch (error) {
+    try {
+      await execAsync(`docker rm -f ${containerName}`);
+    } catch { }
+    await execAsync(`docker run -d --name ${containerName} --hostname shellquest ${PLAYER_IMAGE} sleep infinity`);
+    return containerName;
+  }
+}
+
+async function ensurePlayerImageExists() {
+  try {
+    await execAsync(`docker image inspect ${PLAYER_IMAGE}`);
+  } catch {
+    await execAsync(`docker build -t ${PLAYER_IMAGE} -f Dockerfile.player .`);
+  }
+}
+
+async function removeContainer(userId: string) {
+  const containerName = `sq-${userId}`;
+  try {
+    await execAsync(`docker rm -f ${containerName}`);
+    logger.info(`Removed container ${containerName}`);
+  } catch (err) {
+    logger.error(`Error removing container ${containerName}: ${err}`);
+  }
 }
 
 export function registerTerminalHandler(io: Server) {
@@ -25,7 +65,7 @@ export function registerTerminalHandler(io: Server) {
     next();
   });
 
-  io.on("connection", (socket: Socket) => {
+  io.on("connection", async (socket: Socket) => {
     if (!TERMINAL_SUPPORTED) {
       socket.emit(
         "terminal-error",
@@ -34,23 +74,45 @@ export function registerTerminalHandler(io: Server) {
       return;
     }
 
-    let shell: pty.IPty | null = null;
+    const userId = (socket as any).userId;
+    const containerName = `sq-${userId}`;
+
+    // Update state
+    let state = userContainers.get(userId);
+    if (!state) {
+      state = { containerName, activeSockets: new Set(), inactivityTimer: null };
+      userContainers.set(userId, state);
+    }
+
+    state.activeSockets.add(socket.id);
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
 
     try {
-      shell = pty.spawn(SHELL, [], {
-        name: "xterm-color",
+      await ensurePlayerImageExists();
+      await ensureContainerRunning(userId);
+    } catch (err: any) {
+      logger.error(`Failed to start container for ${userId}: ${err.message}`);
+      socket.emit("terminal-error", "Failed to start isolated environment.");
+      return;
+    }
+
+    let shell: pty.IPty | null = null;
+    try {
+      shell = pty.spawn("docker", ["exec", "-it", containerName, "/bin/bash"], {
+        name: "xterm-256color",
         cols: 80,
         rows: 30,
-        cwd: process.env.HOME || process.env.USERPROFILE || process.cwd(),
-        env: process.env as any,
       });
-    } catch {
-      socket.emit("terminal-error", "Terminal is unavailable in this Windows setup.");
+    } catch (err) {
+      logger.error(`Failed to spawn pty for ${userId}: ${err}`);
+      socket.emit("terminal-error", "Failed to connect to isolated terminal.");
       return;
     }
 
     let outputBuffer = "";
-
     shell.onData((data) => {
       outputBuffer += data;
       if (outputBuffer.length > 4000) outputBuffer = outputBuffer.slice(-4000);
@@ -60,18 +122,62 @@ export function registerTerminalHandler(io: Server) {
     socket.on("terminal-input", (data: string) => {
       if (!shell) return;
       shell.write(data);
+    });
 
-      // crude "did they hit enter" check — real verification should run the
-      // task's own verifyCommand rather than pattern-matching raw input
-      if (data.includes("\r")) {
-        // Example: award today's task once countCompletedTasks logic in
-        // dailyTask.routes.ts is triggered by the frontend explicitly.
-        // This hook is left here for extending automatic verification.
+    socket.on("terminal-restart", async () => {
+      if (shell) {
+        shell.kill();
+        shell = null;
       }
+      // Clean up the container
+      await removeContainer(userId);
+      // Wait for it to be removed, then emit event
+      socket.emit("terminal-restarted");
+
+      try {
+        await ensurePlayerImageExists();
+        await ensureContainerRunning(userId);
+      } catch (err: any) {
+        logger.error(`Failed to start container for ${userId}: ${err.message}`);
+        socket.emit("terminal-error", "Failed to start isolated environment.");
+        return;
+      }
+
+      try {
+        shell = pty.spawn("docker", ["exec", "-it", containerName, "/bin/bash"], {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 30,
+          cwd: process.cwd(),
+          env: process.env as any,
+        });
+      } catch (err) {
+        logger.error(`Failed to spawn pty for ${userId}: ${err}`);
+        socket.emit("terminal-error", "Failed to connect to isolated terminal.");
+        return;
+      }
+
+      outputBuffer = "";
+      shell.onData((data) => {
+        outputBuffer += data;
+        if (outputBuffer.length > 4000) outputBuffer = outputBuffer.slice(-4000);
+        socket.emit("terminal-output", data);
+      });
     });
 
     socket.on("disconnect", () => {
       shell?.kill();
+
+      const st = userContainers.get(userId);
+      if (st) {
+        st.activeSockets.delete(socket.id);
+        if (st.activeSockets.size === 0) {
+          st.inactivityTimer = setTimeout(async () => {
+            await removeContainer(userId);
+            userContainers.delete(userId);
+          }, INACTIVITY_TIMEOUT_MS);
+        }
+      }
     });
   });
 }

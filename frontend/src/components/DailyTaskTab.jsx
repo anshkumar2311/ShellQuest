@@ -34,8 +34,9 @@ export default function DailyTaskTab() {
     try {
       await api.post("/api/daily-task/complete", { taskId: task?.id });
       setCompleted(true);
-    } catch {
-      setError("Could not mark the task complete. Try again.");
+    } catch (err) {
+      const serverError = err?.response?.data?.error;
+      setError(serverError || "Could not mark the task complete. Try again.");
     } finally {
       setMarkingDone(false);
     }
@@ -76,7 +77,7 @@ export default function DailyTaskTab() {
                 <Circle size={12} /> Incomplete
               </span>
             )}
-            
+
             {!completed ? (
               <button
                 type="button"
@@ -92,7 +93,19 @@ export default function DailyTaskTab() {
         </div>
 
         {error ? (
-          <p className="mt-3.5 text-xs font-semibold text-rust-dark bg-rust/5 border border-rust/10 p-2.5 rounded-lg">{error}</p>
+          <p className="mt-3 text-sm text-rust-dark whitespace-pre-wrap font-mono bg-rust/10 p-2 rounded">{error}</p>
+        ) : null}
+
+        {!completed ? (
+          <button
+            type="button"
+            onClick={handleComplete}
+            disabled={markingDone}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-rust text-sand px-4 py-2 text-sm font-medium hover:brightness-110 disabled:opacity-50"
+          >
+            <Sparkles size={14} />
+            {markingDone ? "Marking…" : "Mark as done"}
+          </button>
         ) : null}
       </div>
 

@@ -128,6 +128,7 @@ export default function QuizTab({ onNavigateTab }) {
   const { getToken } = useAuth();
   const [topic, setTopic] = useState(null);
   const [questions, setQuestions] = useState(null);
+  const [quizId, setQuizId] = useState(null);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -140,12 +141,14 @@ export default function QuizTab({ onNavigateTab }) {
     setResult(null);
     setAnswers({});
     setStartTime(Date.now());
+    setQuizId(null);
     try {
       const api = createApiClient(getToken);
       const { data } = await api.post("/api/quiz/generate", { topic: t });
       setQuestions(data.questions);
     } catch (err) {
       console.error(err);
+      setQuizId(data.quizId);
     } finally {
       setLoading(false);
     }
@@ -230,10 +233,10 @@ export default function QuizTab({ onNavigateTab }) {
   if (!topic) {
     return (
       <div className="grid lg:grid-cols-3 gap-6 items-start animate-[fadeIn_0.3s_ease-out]">
-        
+
         {/* Left Columns (Welcome, Featured Cards, Topics list) */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Welcome Header */}
           <div className="space-y-1.5">
             <h3 className="heading-section">Linux Quizzes</h3>
@@ -244,7 +247,7 @@ export default function QuizTab({ onNavigateTab }) {
 
           {/* Featured Quiz of the Day & Recommended Topic Row */}
           <div className="grid sm:grid-cols-2 gap-4">
-            
+
             {/* Featured Quiz of the Day Card */}
             <div className="card-base p-5 bg-rust/5 border-rust/20 flex flex-col justify-between space-y-4 hover:shadow-md transition-all">
               <div className="flex items-center justify-between">
@@ -381,7 +384,7 @@ export default function QuizTab({ onNavigateTab }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-[fadeIn_0.3s_ease-out]">
-      
+
       {/* Quiz Header & Back button */}
       <div className="flex items-center justify-between border-b border-hairline/60 pb-4">
         <div className="space-y-1">

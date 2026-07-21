@@ -1,52 +1,142 @@
+import { exec } from "child_process";
 import { Router } from "express";
+import fs from "fs/promises";
+import path from "path";
+import { promisify } from "util";
+import { prisma } from "../db/prisma";
+import { logger } from "../lib/logger";
 import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
-import { getTaskProgress, markTaskComplete, countCompletedTasks } from "../services/dbService";
-import { unlockBadge } from "../services/dbService";
-import { DailyTask } from "../types";
+import { generateDailyTask } from "../services/tasks";
+
+const execAsync = promisify(exec);
 
 const router = Router();
 
-// A fixed rotation of tasks — picked by day-of-year so everyone gets the
-// same task on the same day, and it repeats once the list is exhausted.
-const TASK_LIST: DailyTask[] = [
-  { id: "t1", title: "Make a folder with 3 files", description: "Create a folder called practice, then create 3 empty files inside it.", verifyCommand: "ls practice" },
-  { id: "t2", title: "Find a file by name", description: "Use find to locate a file called notes.txt anywhere under your home directory.", verifyCommand: "find ~ -name notes.txt" },
-  { id: "t3", title: "Check disk usage", description: "Use du or df to check how much disk space the current directory is using.", verifyCommand: "du -sh ." },
-  { id: "t4", title: "Change file permissions", description: "Create a file called script.sh and make it executable using chmod.", verifyCommand: "chmod +x script.sh" },
-  { id: "t5", title: "Search inside files", description: "Use grep to search for the word 'error' inside all .log files in the current folder.", verifyCommand: "grep -r error *.log" },
-];
-
-function todaysTask(): DailyTask {
-  const dayOfYear = Math.floor(
-    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
-  );
-  return TASK_LIST[dayOfYear % TASK_LIST.length];
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+async function todaysTask() {
+  const task = await prisma.task.findFirst({
+    select: {
+      createdAt: true,
+      title: true,
+      description: true,
+      difficulty: true,
+      id: true
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+  if (!task) {
+    return await generateDailyTask();
+  }
+  const last = task.createdAt;
+  const today = new Date();
+  if (last.getDate() === today.getDate() && last.getMonth() === today.getMonth() && last.getFullYear() === today.getFullYear()) {
+    return task;
+  }
+  else {
+    return await generateDailyTask()
+  }
 }
 
 // GET /api/daily-task
 router.get("/", verifyClerkAuth, async (req, res) => {
-  const task = todaysTask();
-  const completed = await getTaskProgress(req.userId!, task.id, todayISO());
-  res.json({ task, completed });
+  const task = await todaysTask();
+  const completed = await prisma.attempt.findFirst({
+    where: {
+      taskId: task.id,
+      userId: req.userId!,
+      wasSuccess: true
+    }
+  })
+  res.json({ task, completed: completed ? true : false });
 });
 
 // POST /api/daily-task/complete  { taskId }
 router.post("/complete", verifyClerkAuth, async (req, res) => {
   const { taskId } = req.body as { taskId?: string };
-  const task = todaysTask();
-  if (!taskId || taskId !== task.id) {
-    return res.status(400).json({ error: "taskId does not match today's task" });
+  let task;
+  try {
+    task = await todaysTask();
+  } catch (e) {
+    return res.status(400).json({ error: "No task today" });
   }
 
-  await markTaskComplete(req.userId!, taskId, todayISO());
+  if (!taskId) {
+    return res.status(400).json({ error: "task not found" });
+  }
 
-  const completedCount = await countCompletedTasks(req.userId!);
-  if (completedCount >= 5) await unlockBadge(req.userId!, "5 Tasks Done");
-  if (completedCount >= 1) await unlockBadge(req.userId!, "First Task");
+  const validatorPath = path.join(process.cwd(), "files", "validators", `${taskId}.sh`);
+  try {
+    await fs.access(validatorPath);
+    logger.info(`Validator script found at ${validatorPath}`);
+    const containerName = `sq-${req.userId}`;
+
+    // Check if container is running first
+    try {
+      const { stdout: inspectOut } = await execAsync(`docker inspect -f '{{.State.Running}}' ${containerName}`);
+      if (inspectOut.trim() !== "true") {
+        logger.error(`Container ${containerName} is not running.`);
+        return res.status(400).json({ error: "Terminal environment is not running. Connect to the terminal first." });
+      }
+      logger.info(`Container ${containerName} is running.`);
+    } catch (err: any) {
+      logger.error(`Failed to inspect container ${containerName}: ${err.message}`);
+      return res.status(400).json({ error: "Terminal environment not found. Connect to the terminal first." });
+    }
+
+    // Execute the validation script inside the container
+    try {
+      logger.info(`Executing script inside container ${containerName}`);
+      const { stdout, stderr } = await execAsync(`docker exec -i ${containerName} bash < ${validatorPath}`);
+      logger.info(`Script execution succeeded. stdout: ${stdout}, stderr: ${stderr}`);
+    } catch (err: any) {
+      logger.error(`Script execution failed! Exit code: ${err.code}, stdout: ${err.stdout}, stderr: ${err.stderr}, message: ${err.message}`);
+      return res.status(400).json({ error: "Task verification failed.\n" + (err.stderr || err.stdout || err.message) });
+    }
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      logger.warn(`No validator script found for task ${taskId}`);
+    } else {
+      logger.error(`Error accessing validator script: ${err.message}`);
+    }
+  }
+
+  // Find the full task with associated badges
+  const taskData = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { badge: true }
+  });
+
+  if (taskData && taskData.badge) {
+    for (const b of taskData.badge) {
+      await prisma.userBadge.upsert({
+        where: {
+          userId_badgeId: {
+            userId: req.userId!,
+            badgeId: b.id
+          }
+        },
+        update: {
+          progress: { increment: 1 }
+        },
+        create: {
+          userId: req.userId!,
+          badgeId: b.id,
+          progress: 1
+        }
+      });
+    }
+  }
+
+  // Record the successful attempt
+  await prisma.attempt.create({
+    data: {
+      userId: req.userId!,
+      taskId: taskId,
+      timeTaken: 0,
+      wasSuccess: true
+    }
+  });
 
   res.json({ ok: true });
 });
