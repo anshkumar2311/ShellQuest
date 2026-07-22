@@ -10,12 +10,17 @@ router.get("/", verifyClerkAuth, async (req, res) => {
     select: {
       name: true,
       description: true,
+      difficulty: true,
+      xp: true,
+      target: true,
+      type: true,
       userBadges: {
         where: {
           userId: req.userId!
         },
         select: {
-          unlockedAt: true
+          unlockedAt: true,
+          progress: true
         }
       }
     }
@@ -24,8 +29,13 @@ router.get("/", verifyClerkAuth, async (req, res) => {
   const badges = all.map((b) => ({
     name: b.name,
     description: b.description,
-    unlocked: b.userBadges.length > 0,
-    unlockedDate: b.userBadges.length > 0 ? b.userBadges[0].unlockedAt : null,
+    difficulty: b.difficulty,
+    xp: b.xp,
+    target: b.target,
+    type: b.type,
+    unlocked: b.userBadges.length > 0 && b.userBadges[0].progress >= b.target,
+    progress: b.userBadges.length > 0 ? b.userBadges[0].progress : 0,
+    unlockedDate: (b.userBadges.length > 0 && b.userBadges[0].progress >= b.target) ? b.userBadges[0].unlockedAt : null,
   }))
 
   res.json({ badges });

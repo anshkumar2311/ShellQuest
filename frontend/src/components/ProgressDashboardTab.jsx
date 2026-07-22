@@ -1,21 +1,17 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useAuth } from "@clerk/clerk-react";
+import { createApiClient } from "../lib/api.js";
 import {
   Sparkles,
   Trophy,
   Flame,
-  Clock,
   Target,
-  BarChart3,
-  TrendingUp,
   Award,
   Terminal,
   MessageSquareCode,
   CheckCircle2,
-  Calendar,
   Zap,
   Printer,
-  ChevronRight,
-  ShieldCheck,
   BookOpen
 } from "lucide-react";
 import { getProgressStats } from "../lib/progressData.js";
@@ -24,11 +20,41 @@ import DayActivityModal from "./DayActivityModal.jsx";
 import ExportReportModal from "./ExportReportModal.jsx";
 
 export default function ProgressDashboardTab({ onNavigateTab }) {
-  const stats = useMemo(() => getProgressStats(), []);
+  const { getToken } = useAuth();
+  const [rawStats, setRawStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const api = createApiClient(getToken);
+        const { data } = await api.get("/api/progress");
+        setRawStats(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [getToken]);
+
+  const stats = useMemo(() => {
+    if (!rawStats) return null;
+    return getProgressStats(rawStats);
+  }, [rawStats]);
+
   const [selectedDayData, setSelectedDayData] = useState(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
-  const hasActivity = stats.daysActive > 0;
+  if (loading) {
+    return (
+      <div className="card-base p-8 text-center animate-pulse">
+        <p className="font-mono text-sm text-coffee-soft">loading progress…</p>
+      </div>
+    );
+  }
+
+  const hasActivity = stats && stats.daysActive > 0;
 
   // New User Empty State Render
   if (!hasActivity) {
@@ -63,7 +89,7 @@ export default function ProgressDashboardTab({ onNavigateTab }) {
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
-      
+
       {/* 1. AI-Generated Learning Insights Card */}
       <div className="card-base p-6 bg-lavender-light/30 border-lavender-soft/30 space-y-3 relative overflow-hidden shadow-sm">
         <div className="flex items-center gap-2.5 text-xs font-mono font-bold text-lavender-dark uppercase tracking-wider">
@@ -77,7 +103,7 @@ export default function ProgressDashboardTab({ onNavigateTab }) {
 
       {/* 2. Primary Highlights Row (Level Card, Weekly Goals, Consistency & Learning Time) */}
       <div className="grid md:grid-cols-3 gap-6">
-        
+
         {/* Learning Level Card */}
         <div className="card-base p-6 space-y-4 hover:shadow-md transition-all duration-300 flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -105,7 +131,7 @@ export default function ProgressDashboardTab({ onNavigateTab }) {
         <div className="card-base p-6 space-y-4 hover:shadow-md transition-all duration-300 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-coffee-soft">This Week's Goal</span>
-            <span className="text-xs font-bold text-coffee font-mono">5 / 8 completed</span>
+            <span className="text-xs font-bold text-coffee font-mono">{stats.weeklyGoals.filter(g => g.completed).length} / {stats.weeklyGoals.length} completed</span>
           </div>
           <div className="space-y-2 text-xs font-semibold text-coffee">
             {stats.weeklyGoals.map((g) => (
@@ -121,7 +147,7 @@ export default function ProgressDashboardTab({ onNavigateTab }) {
             ))}
           </div>
           <div className="w-full h-2 bg-sand-deep/45 rounded-full overflow-hidden">
-            <div className="h-full bg-moss transition-all duration-500" style={{ width: "62.5%" }} />
+            <div className="h-full bg-moss transition-all duration-500" style={{ width: `${stats.weeklyGoals.length ? (stats.weeklyGoals.filter(g => g.completed).length / stats.weeklyGoals.length) * 100 : 0}%` }} />
           </div>
         </div>
 
@@ -156,7 +182,7 @@ export default function ProgressDashboardTab({ onNavigateTab }) {
 
       {/* 3. Skills Progress & Weekly Achievements */}
       <div className="grid md:grid-cols-3 gap-6">
-        
+
         {/* Skills Progress Card */}
         <div className="md:col-span-2 card-base p-6 space-y-4">
           <div className="flex items-center justify-between">

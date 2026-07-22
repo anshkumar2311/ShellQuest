@@ -3,6 +3,7 @@ import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
 import { generateQuiz } from "../services/aiService";
 import { prisma } from "../db/prisma";
 import { QuizQuestion } from "../types";
+import { HeatmapActivity, HeatmapActivitySchema } from "../types/schemas";
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.post("/generate", verifyClerkAuth, async (req, res) => {
     data: {
       questions: {
         create: aiQuestions.map((q) => {
-          const qCorrectList = Array.isArray(q.correctAnswers) ? q.correctAnswers : ((q as any).correctAnswer ? [(q as any).correctAnswer] : []);
+          const qCorrect = q.correctAnswer;
           // Append zero-width space + random to avoid statement unique constraint violations
           const uniqueSuffix = ` \u200B${Math.random().toString(36).substring(7)}`;
           return {
@@ -26,7 +27,7 @@ router.post("/generate", verifyClerkAuth, async (req, res) => {
             options: {
               create: q.options.map((opt) => ({
                 text: opt,
-                isCorrect: qCorrectList.includes(opt)
+                isCorrect: qCorrect === opt
               }))
             }
           };
@@ -96,16 +97,59 @@ router.post("/submit", verifyClerkAuth, async (req, res) => {
     }
   });
 
+  let earnedXp = Math.round(score * 10); // Base XP for completing the quiz
+  let heatmapEvents: HeatmapActivity[] = [];
+
   if (Math.abs(score - quiz.questions.length) < 0.01) {
     const badge = await prisma.badge.findUnique({ where: { name: "Perfect Quiz" } });
     if (badge) {
+      const existing = await prisma.userBadge.findUnique({
+        where: { userId_badgeId: { userId: req.userId!, badgeId: badge.id } }
+      });
+      if (!existing || existing.progress < badge.target) {
+        earnedXp += badge.xp;
+        heatmapEvents.push({
+           type: "badge",
+           title: `Badge Earned: ${badge.name}`,
+           detail: badge.description,
+           badge: "Achievement",
+           date: new Date().toISOString()
+        });
+      }
+      
       await prisma.userBadge.upsert({
         where: { userId_badgeId: { userId: req.userId!, badgeId: badge.id } },
         create: { userId: req.userId!, badgeId: badge.id },
-        update: {}
+        update: { progress: 1 }
       });
     }
   }
+
+  heatmapEvents.push({
+     type: "quiz",
+     title: "Quiz Completed",
+     detail: `Score: ${score}/${quiz.questions.length}`,
+     badge: "Quiz",
+     date: new Date().toISOString()
+  });
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { heatmap: true }});
+  let currentHeatmap: HeatmapActivity[] = [];
+  if (user?.heatmap) {
+    try {
+      currentHeatmap = HeatmapActivitySchema.array().parse(user.heatmap);
+    } catch (err) {
+      console.error(`Failed to parse heatmap for user: ${req.userId!}`);
+    }
+  }
+
+  await prisma.user.update({
+     where: { id: req.userId! },
+     data: {
+        xp: { increment: earnedXp },
+        heatmap: [...currentHeatmap, ...heatmapEvents]
+     }
+  });
 
   res.json({ score, total: quiz.questions.length });
 });

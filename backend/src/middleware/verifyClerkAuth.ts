@@ -7,11 +7,11 @@ async function ensureUserSync(userId: string) {
   if (!user) {
     const clerkUser = await clerkClient.users.getUser(userId);
     const email = clerkUser.emailAddresses?.[0]?.emailAddress || null;
-    
-    let name = clerkUser.firstName 
-      ? `${clerkUser.firstName} ${clerkUser.lastName || ""}`.trim() 
+
+    let name = clerkUser.firstName
+      ? `${clerkUser.firstName} ${clerkUser.lastName || ""}`.trim()
       : clerkUser.username;
-      
+
     if (!name) {
       if (email) {
         name = email.split('@')[0];
@@ -19,7 +19,7 @@ async function ensureUserSync(userId: string) {
         throw new Error("Clerk user must have a name, username, or email");
       }
     }
-      
+
     await prisma.user.create({
       data: {
         id: userId,
@@ -51,7 +51,7 @@ export async function verifyClerkAuth(req: Request, res: Response, next: NextFun
     req.userId = claims.sub; // Clerk user id
     next();
   } catch (err) {
-    return res.status(401).json({ error: "Auth verification failed" });
+    return res.status(401).json({ error: err });
   }
 }
 

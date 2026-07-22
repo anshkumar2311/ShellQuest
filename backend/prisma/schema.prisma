@@ -10,7 +10,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum BadgeType {
@@ -25,6 +24,8 @@ model Badge {
   name        String      @unique
   description String
   tasks       Task[]
+  difficulty  Difficulty  @default(BEGINNER)
+  xp          Int         @default(0)
   target      Int         @default(1)
   type        BadgeType
   userBadges  UserBadge[]
@@ -38,6 +39,11 @@ model User {
   attempts     Attempt[]
   userBadges   UserBadge[]
   quizAttempts QuizAttempt[]
+  xp           Int           @default(0)
+  streak       Int           @default(0)
+  maxStreak    Int           @default(0)
+  heatmap      Json[]        @default([])
+  chats        Chat[]
 }
 
 model UserBadge {
@@ -58,15 +64,20 @@ enum Difficulty {
   ADVANCED
 }
 
+enum TaskType {
+  USER
+  DAILY
+  WEEKLY
+}
+
 model Task {
   id          String     @id @default(cuid())
   title       String
   description String     @default("")
   difficulty  Difficulty @default(BEGINNER)
-  badgeId     String[]
   badge       Badge[]
   attempts    Attempt[]
-  isDailyTask Boolean    @default(false)
+  type        TaskType   @default(USER)
   createdAt   DateTime   @default(now())
 }
 
@@ -121,4 +132,15 @@ model QuestionAttempt {
   quizAttemptId String
   quizAttempt   QuizAttempt @relation(fields: [quizAttemptId], references: [id])
   selected      Option[]
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  summary   String
+  messages  Json[]   @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

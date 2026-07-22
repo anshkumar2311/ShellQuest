@@ -5,6 +5,89 @@ import fs from "fs/promises";
 import path from "path";
 
 export async function generateDailyTask() {
+    return generateTask("DAILY");
+}
+
+export async function generateWeeklyTask() {
+    return generateTask("WEEKLY");
+}
+
+export async function todaysTask() {
+  const task = await prisma.task.findFirst({
+    where: { type: "DAILY" },
+    select: {
+      createdAt: true,
+      title: true,
+      description: true,
+      difficulty: true,
+      id: true,
+      type: true
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+  if (!task) {
+    return await generateDailyTask();
+  }
+  const last = task.createdAt;
+  const today = new Date();
+  if (last.getDate() === today.getDate() && last.getMonth() === today.getMonth() && last.getFullYear() === today.getFullYear()) {
+    return task;
+  }
+  else {
+    return await generateDailyTask();
+  }
+}
+
+export async function thisWeeksTasks() {
+  const tasks = await prisma.task.findMany({
+    where: { type: "WEEKLY" },
+    select: {
+      createdAt: true,
+      title: true,
+      description: true,
+      difficulty: true,
+      id: true,
+      type: true
+    },
+    orderBy: {
+      createdAt: 'desc'
+    },
+    take: 5
+  });
+  
+  if (tasks.length === 0) {
+    return await Promise.all([
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask()
+    ]);
+  }
+  
+  const last = tasks[0].createdAt;
+  const today = new Date();
+  const diffTime = Math.abs(today.getTime() - last.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 7) {
+    // Return existing tasks. (It might be less than 5 if we didn't generate 5 before, but going forward it will be 5)
+    return tasks;
+  }
+  else {
+    return await Promise.all([
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask(),
+      generateWeeklyTask()
+    ]);
+  }
+}
+
+async function generateTask(taskType: "DAILY" | "WEEKLY") {
     const badges = await prisma.badge.findMany({
         where: {
             type: "SKILL"
@@ -16,7 +99,7 @@ export async function generateDailyTask() {
         }
     });
 
-    const systemPrompt = `You are a Linux instructor. Create a daily Linux task.
+    const systemPrompt = `You are a Linux instructor. Create a ${taskType.toLowerCase()} Linux task. ${taskType === 'WEEKLY' ? 'Weekly tasks should be slightly more complex and test a combination of skills.' : ''}
 
 Provide:
 1. A JSON block.
@@ -26,7 +109,7 @@ JSON format:
 {
   "title": "string",
   "description": "string (must include EVERY requirement that the validator checks)",
-  "difficulty": "BEGINNER | INTERMEDIATE | ADVANCED"
+  "difficulty": "${taskType === 'WEEKLY' ? 'INTERMEDIATE | ADVANCED' : 'BEGINNER | INTERMEDIATE | ADVANCED'}"
 }
 
 The validator must:
@@ -34,7 +117,7 @@ The validator must:
 - Validate only requirements explicitly stated in the description.
 - Not assume default Linux behavior or implementation details.
 - Accept any valid solution that satisfies the described requirements.`;
-    const msg = "Create a new daily Linux task.";
+    const msg = `Create a new ${taskType.toLowerCase()} Linux task.`;
     const t = await getLLMConnector().completion(systemPrompt, [msg]);
     // Extract JSON block
     let jsonStr = "";
@@ -86,14 +169,14 @@ The validator must:
         }
     }
 
-    logger.info(`Generated daily task: ${parsedTask.title}, improving badges: ${selectedBadgeIds.length}`);
+    logger.info(`Generated ${taskType.toLowerCase()} task: ${parsedTask.title}, improving badges: ${selectedBadgeIds.length}`);
 
     const task = await prisma.task.create({
         data: {
             title: parsedTask.title,
             description: parsedTask.description,
             difficulty: parsedTask.difficulty || "ADVANCED",
-            isDailyTask: true,
+            type: taskType,
             badge: {
                 connect: selectedBadgeIds.map(id => ({ id }))
             }
@@ -103,7 +186,8 @@ The validator must:
             description: true,
             difficulty: true,
             createdAt: true,
-            id: true
+            id: true,
+            type: true
         }
     });
 

@@ -6,63 +6,54 @@ import { promisify } from "util";
 import { prisma } from "../db/prisma";
 import { logger } from "../lib/logger";
 import { verifyClerkAuth } from "../middleware/verifyClerkAuth";
-import { generateDailyTask } from "../services/tasks";
+import { todaysTask, thisWeeksTasks } from "../services/tasks";
+import { HeatmapActivity, HeatmapActivitySchema } from "../types/schemas";
 
 const execAsync = promisify(exec);
 
 const router = Router();
 
-async function todaysTask() {
-  const task = await prisma.task.findFirst({
-    select: {
-      createdAt: true,
-      title: true,
-      description: true,
-      difficulty: true,
-      id: true
-    },
-    orderBy: {
-      createdAt: 'desc'
-    }
-  });
-  if (!task) {
-    return await generateDailyTask();
-  }
-  const last = task.createdAt;
-  const today = new Date();
-  if (last.getDate() === today.getDate() && last.getMonth() === today.getMonth() && last.getFullYear() === today.getFullYear()) {
-    return task;
-  }
-  else {
-    return await generateDailyTask()
-  }
-}
-
 // GET /api/daily-task
 router.get("/", verifyClerkAuth, async (req, res) => {
-  const task = await todaysTask();
-  const completed = await prisma.attempt.findFirst({
-    where: {
-      taskId: task.id,
-      userId: req.userId!,
-      wasSuccess: true
-    }
-  })
-  res.json({ task, completed: completed ? true : false });
+  const [dailyTask, weeklyTasks] = await Promise.all([
+    todaysTask(),
+    thisWeeksTasks()
+  ]);
+
+  const [dailyCompleted, weeklyCompletedData] = await Promise.all([
+    prisma.attempt.findFirst({ where: { taskId: dailyTask.id, userId: req.userId!, wasSuccess: true } }),
+    prisma.attempt.findMany({
+      where: {
+        userId: req.userId!,
+        wasSuccess: true,
+        taskId: { in: weeklyTasks.map(t => t.id) }
+      }
+    })
+  ]);
+
+  const weeklyCompletedIds = new Set(weeklyCompletedData.map(a => a.taskId));
+
+  res.json({
+    dailyTask,
+    dailyCompleted: !!dailyCompleted,
+    weeklyTasks: weeklyTasks.map(t => ({ ...t, completed: weeklyCompletedIds.has(t.id) }))
+  });
 });
 
 // POST /api/daily-task/complete  { taskId }
 router.post("/complete", verifyClerkAuth, async (req, res) => {
   const { taskId } = req.body as { taskId?: string };
-  let task;
-  try {
-    task = await todaysTask();
-  } catch (e) {
-    return res.status(400).json({ error: "No task today" });
+  if (!taskId) {
+    return res.status(400).json({ error: "taskId is required" });
   }
 
-  if (!taskId) {
-    return res.status(400).json({ error: "task not found" });
+  const taskData = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { badge: true }
+  });
+
+  if (!taskData) {
+    return res.status(404).json({ error: "Task not found" });
   }
 
   const validatorPath = path.join(process.cwd(), "files", "validators", `${taskId}.sh`);
@@ -101,14 +92,20 @@ router.post("/complete", verifyClerkAuth, async (req, res) => {
     }
   }
 
-  // Find the full task with associated badges
-  const taskData = await prisma.task.findUnique({
-    where: { id: taskId },
-    include: { badge: true }
-  });
+
+
+  let earnedXp = 0;
+  let heatmapEvents: HeatmapActivity[] = [];
 
   if (taskData && taskData.badge) {
     for (const b of taskData.badge) {
+      const existingUb = await prisma.userBadge.findUnique({
+        where: { userId_badgeId: { userId: req.userId!, badgeId: b.id } },
+        select: { progress: true }
+      });
+
+      const newProgress = (existingUb?.progress || 0) + 1;
+
       await prisma.userBadge.upsert({
         where: {
           userId_badgeId: {
@@ -125,8 +122,58 @@ router.post("/complete", verifyClerkAuth, async (req, res) => {
           progress: 1
         }
       });
+
+      if (newProgress === b.target) {
+        earnedXp += b.xp;
+        heatmapEvents.push({
+          type: "badge",
+          title: `Badge Earned: ${b.name}`,
+          detail: b.description,
+          badge: "Achievement",
+          date: new Date().toISOString()
+        });
+      }
     }
   }
+
+  // task XP
+  const difficultyMap: Record<string, number> = {
+    BEGINNER: 20,
+    INTERMEDIATE: 40,
+    ADVANCED: 80
+  };
+  const taskXp = taskData ? difficultyMap[taskData.difficulty] : 20;
+  earnedXp += taskXp;
+
+  heatmapEvents.push({
+    type: "task",
+    title: "Daily Challenge Completed",
+    detail: taskData ? taskData.title : "Terminal Task",
+    badge: "Terminal",
+    date: new Date().toISOString()
+  });
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { heatmap: true, id: true } });
+  if (!user) {
+    return res.status(500).json({ error: "User not found" });
+  }
+  let currentHeatmap: HeatmapActivity[] = [];
+  if (user.heatmap) {
+    try {
+      currentHeatmap = HeatmapActivitySchema.array().parse(user.heatmap);
+    }
+    catch (err) {
+      logger.error(`Failed to parse heatmap for user: ${user.id}.`);
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: req.userId! },
+    data: {
+      xp: { increment: earnedXp },
+      heatmap: [...currentHeatmap, ...heatmapEvents]
+    }
+  });
 
   // Record the successful attempt
   await prisma.attempt.create({

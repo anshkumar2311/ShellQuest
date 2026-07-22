@@ -146,9 +146,9 @@ export default function QuizTab({ onNavigateTab }) {
       const api = createApiClient(getToken);
       const { data } = await api.post("/api/quiz/generate", { topic: t });
       setQuestions(data.questions);
+      setQuizId(data.quizId);
     } catch (err) {
       console.error(err);
-      setQuizId(data.quizId);
     } finally {
       setLoading(false);
     }
@@ -161,7 +161,7 @@ export default function QuizTab({ onNavigateTab }) {
 
     try {
       const api = createApiClient(getToken);
-      const { data } = await api.post("/api/quiz/submit", { topic, answers });
+      const { data } = await api.post("/api/quiz/submit", { quizId, answers });
 
       const detailedResults = (data.detailedResults && data.detailedResults.length > 0)
         ? data.detailedResults

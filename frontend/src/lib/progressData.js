@@ -1,35 +1,29 @@
 // Progress Data Engine for ShellQuest Progress Dashboard
 
-export function getProgressStats() {
-  // Generate 365 days of activity (past 52-53 weeks ending today)
+export function getProgressStats(userData) {
+  const { xp, streak, maxStreak, heatmap, totalAttempts, totalQuizzes, totalBadges, totalChats } = userData;
+
   const today = new Date();
   const days = [];
   const activityMap = {};
+  
+  // Aggregate heatmap events by date string
+  const groupedEvents = {};
+  heatmap.forEach(event => {
+    const d = new Date(event.date);
+    const dateStr = d.toISOString().split("T")[0];
+    if (!groupedEvents[dateStr]) groupedEvents[dateStr] = [];
+    groupedEvents[dateStr].push(event);
+  });
 
-  // We build a 365-day date array
+  // Build a 365-day date array
   for (let i = 364; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
+    const events = groupedEvents[dateStr] || [];
+    const count = events.length;
 
-    // Seed realistic activity distribution for demonstration
-    // Recent 30 days have more activity, older days have scattered activity
-    let count = 0;
-    const isRecent = i < 45;
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-
-    if (isRecent) {
-      const rand = (i * 7 + d.getDate()) % 10;
-      if (rand > 2) count = (rand % 5) + 1;
-    } else if (i < 180) {
-      const rand = (i * 3 + d.getDate()) % 10;
-      if (rand > 5) count = (rand % 3) + 1;
-    } else {
-      const rand = (i * 11) % 10;
-      if (rand > 7) count = 1;
-    }
-
-    // Determine level: 0 = none, 1 = 1-2, 2 = 3-4, 3 = 5+
     let level = 0;
     if (count >= 5) level = 3;
     else if (count >= 3) level = 2;
@@ -38,36 +32,57 @@ export function getProgressStats() {
     days.push({ date: dateStr, count, level, dayOfWeek: d.getDay() });
 
     if (count > 0) {
-      activityMap[dateStr] = generateDayDetails(dateStr, count);
+      const dateObj = new Date(dateStr);
+      const formattedDate = dateObj.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric"
+      });
+      activityMap[dateStr] = {
+        dateFormatted: formattedDate,
+        totalEvents: count,
+        events
+      };
     }
   }
 
   // Calculated Metrics
-  const totalXP = 720 + 450; // 1,170 XP
-  const levelNumber = 5;
-  const levelTitle = "Linux Explorer";
-  const xpCurrent = 720;
-  const xpMax = 1000;
+  const totalXP = xp;
+  const levelNumber = Math.floor(xp / 100) + 1;
+  const levelTitle = "Linux Explorer"; // Can be dynamic
+  const xpCurrent = xp % 100;
+  const xpMax = 100;
 
-  const currentStreak = 6;
-  const longestStreak = 12;
+  const currentStreak = streak;
+  const longestStreak = maxStreak;
   const daysActive = days.filter((d) => d.count > 0).length;
-  const totalLearningHours = 4.5;
-  const totalChallenges = 24;
+  const totalLearningHours = 0; // Replace if tracking time
+  const totalChallenges = totalAttempts;
 
-  const weeklyGoals = [
-    { id: 1, title: "Complete 3 Quizzes", completed: true, current: 3, target: 3 },
-    { id: 2, title: "Finish 5 Daily Tasks", completed: false, current: 3, target: 5 },
-    { id: 3, title: "Practice AI Chat", completed: true, current: 1, target: 1 }
-  ];
+  const weeklyGoals = [];
+  if (userData.dailyTask) {
+    weeklyGoals.push({
+      id: "daily",
+      title: "Daily Linux Challenge",
+      completed: userData.dailyTask.completed,
+      current: userData.dailyTask.completed ? 1 : 0,
+      target: 1
+    });
+  }
+  
+  if (userData.weeklyTasks && Array.isArray(userData.weeklyTasks)) {
+    userData.weeklyTasks.forEach((task, index) => {
+      weeklyGoals.push({
+        id: `weekly-${task.id}`,
+        title: `Weekly Challenge ${index + 1}`,
+        completed: task.completed,
+        current: task.completed ? 1 : 0,
+        target: 1
+      });
+    });
+  }
 
-  const skillsProgress = [
-    { name: "Linux Basics", percentage: 80, color: "bg-moss" },
-    { name: "Permissions", percentage: 60, color: "bg-rust" },
-    { name: "Networking", percentage: 30, color: "bg-lavender-dark" },
-    { name: "Shell Scripting", percentage: 50, color: "bg-coffee" },
-    { name: "Processes", percentage: 70, color: "bg-moss" }
-  ];
+  const skillsProgress = [];
 
   const favoriteTime = {
     label: "Evening",
@@ -75,72 +90,47 @@ export function getProgressStats() {
     icon: "🌙"
   };
 
-  const achievementsThisWeek = [
-    { icon: "🏅", text: "Earned 2 badges", highlight: "2 badges" },
-    { icon: "🔥", text: "5-day streak", highlight: "5-day" },
-    { icon: "💯", text: "Scored 100% once", highlight: "100%" },
-    { icon: "⚡", text: "Completed 12 commands", highlight: "12 commands" }
-  ];
+  const achievementsThisWeek = [];
 
   const consistency = {
-    percentage: 87,
-    rating: "Excellent"
+    percentage: Math.min((currentStreak / 30) * 100, 100).toFixed(0),
+    rating: currentStreak > 7 ? "Excellent" : currentStreak > 3 ? "Good" : "Needs Work"
   };
 
-  const aiInsight = "This week you've completed 5 quizzes, solved 8 terminal tasks, and improved your average score by 12%. You're most confident in File Management but should practice Shell Scripting. Keep going—you've maintained a 6-day learning streak!";
+  const aiInsight = `You've completed ${totalQuizzes} quizzes and ${totalAttempts} terminal tasks. You have a ${currentStreak}-day streak. Keep it up!`;
 
-  const timelineItems = [
-    {
-      id: 1,
-      type: "badge",
-      icon: "🏅",
-      title: "Earned Beginner Badge",
-      date: "Today, 4:15 PM",
-      desc: "Unlocked 'Command Commander' badge for running 50 valid terminal commands."
-    },
-    {
-      id: 2,
-      type: "quiz",
-      icon: "📖",
-      title: "Completed Linux Basics Quiz",
-      date: "Yesterday, 7:30 PM",
-      desc: "Scored 90% (9/10 correct) in File System Navigation."
-    },
-    {
-      id: 3,
-      type: "task",
-      icon: "💻",
-      title: "Solved 'File Permissions' Challenge",
-      date: "2 days ago",
-      desc: "Successfully configured chmod 755 executable permissions on practice script."
-    },
-    {
-      id: 4,
-      type: "ai",
-      icon: "🤖",
-      title: "Asked AI 4 Questions",
-      date: "3 days ago",
-      desc: "Explored grep pipe filters and standard output redirection flags."
-    },
-    {
-      id: 5,
-      type: "challenge",
-      icon: "🎯",
-      title: "Finished Daily Challenge",
-      date: "4 days ago",
-      desc: "Created nested directory tree structure with mkdir -p."
-    }
-  ];
+  // Sort timeline events: most recent 5
+  const timelineItems = [...heatmap]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5)
+    .map((event, idx) => {
+      let icon = "💻";
+      if (event.type === "quiz") icon = "📖";
+      if (event.type === "badge") icon = "🏅";
+      if (event.type === "ai") icon = "🤖";
+      
+      const d = new Date(event.date);
+      const timeStr = d.toLocaleDateString() + " " + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      
+      return {
+        id: idx,
+        type: event.type,
+        icon,
+        title: event.title,
+        date: timeStr,
+        desc: event.detail
+      };
+    });
 
   const analyticsSummary = {
-    totalCommands: 142,
-    quizzesCompleted: 12,
-    dailyTasksFinished: 8,
-    aiQuestionsAsked: 18,
-    currentStreak: 6,
-    longestStreak: 12,
+    totalCommands: 0,
+    quizzesCompleted: totalQuizzes,
+    dailyTasksFinished: totalAttempts,
+    aiQuestionsAsked: totalChats,
+    currentStreak: currentStreak,
+    longestStreak: longestStreak,
     totalXP: totalXP,
-    badgesEarned: 4
+    badgesEarned: totalBadges
   };
 
   return {

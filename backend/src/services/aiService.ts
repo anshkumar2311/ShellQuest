@@ -2,6 +2,27 @@ import { QuizQuestion } from "../types";
 import { getLLMConnector } from "../lib/llm-connector";
 
 /**
+ * Ask the AI to generate a short title for a new chat session.
+ */
+export async function generateChatTitle(message: string): Promise<string> {
+  const prompt = `Generate a very short title (max 4-5 words) summarizing this message: "${message}". Reply ONLY with the title text.`;
+  const connector = getLLMConnector();
+  const raw = await connector.completion(prompt, []);
+  return raw.trim() || "New Chat";
+}
+
+/**
+ * Ask the AI to generate a single-line summary for a chat session.
+ */
+export async function generateChatSummary(messages: any[]): Promise<string> {
+  const formattedMessages = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+  const prompt = `Generate a 1-line summary (max 15 words) of the following chat conversation:\n\n${formattedMessages}\n\nReply ONLY with the summary.`;
+  const connector = getLLMConnector();
+  const raw = await connector.completion(prompt, []);
+  return raw.trim() || "Ongoing conversation...";
+}
+
+/**
  * Ask the AI to generate 5 MCQ questions on a Linux topic, returned as strict JSON.
  */
 export async function generateQuiz(topic: string): Promise<QuizQuestion[]> {
@@ -104,7 +125,7 @@ export async function generateQuiz(topic: string): Promise<QuizQuestion[]> {
       {
         question: `Sample question about ${topic} (AI response could not be parsed)`,
         options: ["Option A", "Option B", "Option C", "Option D"],
-        correctAnswers: ["Option A"],
+        correctAnswer: "Option A",
       },
       {
         question: "Which command prints your current working directory path?",
