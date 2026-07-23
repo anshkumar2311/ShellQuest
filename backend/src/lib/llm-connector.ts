@@ -21,6 +21,10 @@ export const geminiConnector: LLMConnector = {
             }
         );
         const data = await res.json();
+        if (!res.ok) {
+            console.error("Gemini API Error:", data);
+            throw new Error(`Gemini API Error: ${res.statusText}`);
+        }
         return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     }
 };
@@ -49,6 +53,10 @@ export const openaiConnector: LLMConnector = {
             }),
         });
         const data = await res.json();
+        if (!res.ok) {
+            console.error("OpenAI API Error:", data);
+            throw new Error(`OpenAI API Error: ${res.statusText}`);
+        }
         return data.choices?.[0]?.message?.content ?? "";
     }
 };
@@ -77,6 +85,10 @@ export const groqConnector: LLMConnector = {
             }),
         });
         const data = await res.json();
+        if (!res.ok) {
+            console.error("Groq API Error:", data);
+            throw new Error(`Groq API Error: ${res.statusText}`);
+        }
         return data.choices?.[0]?.message?.content ?? "";
     }
 };

@@ -1,0 +1,1 @@
+docker build --build-arg DATABASE_URL="postgresql://shellquest:shellquest@localhost:5432/shellquest" -t rudr007/shellquest-backend .

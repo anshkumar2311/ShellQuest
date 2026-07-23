@@ -16,38 +16,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
   backend:
+    image: rudr007/shellquest-backend
     build:
       context: ./backend
     container_name: shellquest-backend
     restart: unless-stopped
-    command: sh -c "npx prisma generate && npm run dev"
     env_file:
       - ./backend/.env
     environment:
-      # Inside the Docker network, Postgres is reachable by service name
-      # "postgres", not "localhost" — this overrides whatever is in .env
-      DATABASE_URL: postgresql://shellquest:shellquest@postgres:5432/shellquest
+      DATABASE_URL: ${DATABASE_URL}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_PROVIDER: ${AI_PROVIDER}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      PORT: ${PORT}
     ports:
-      - "4000:4000"
+      - "${PORT}:${PORT}"
     volumes:
-      - ./backend/src:/app/src
-      - shellquest_prisma_client:/app/src/generated/prisma
+      - ./certs:/app/certs
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
-
-  # optional: browser UI to inspect the database at http://localhost:8080
-  adminer:
-    image: adminer:latest
-    container_name: shellquest-adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
 
 volumes:
   shellquest_pgdata:

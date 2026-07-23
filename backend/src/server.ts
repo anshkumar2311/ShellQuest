@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { createServer } from "http";
 import { Server } from "socket.io";
 
 import aiChatRoutes from "./routes/aiChat.routes";
@@ -11,9 +10,16 @@ import badgesRoutes from "./routes/badges.routes";
 import progressRoutes from "./routes/progress.routes";
 import { registerTerminalHandler } from "./socket/terminalHandler";
 import { Logger } from "./middleware/requestLogger";
+import { ServerOptions, createServer } from 'https';
+import fs from 'fs';
+
+const httpsOptions: ServerOptions = {
+  cert: fs.readFileSync('certs/cert.pem'),
+  key: fs.readFileSync('certs/key.pem')
+}
 
 const app = express();
-const httpServer = createServer(app);
+const httpServer = createServer(httpsOptions, app);
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
